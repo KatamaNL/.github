@@ -1,0 +1,20 @@
+# Copy this to .github/workflows/sync-from-server.yml in your WP site repo
+# Change SITE_USER and SITE_DOMAIN to match your site
+
+name: Sync from Server
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  sync:
+    uses: KatamaNL/.github/.github/workflows/wp-sync.yml@main
+    with:
+      server_user: 'SITE_USER'    # e.g. ciab, cocobe, katama
+      domain: 'SITE_DOMAIN'       # e.g. cheeseinabox.nl
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}

@@ -1,0 +1,23 @@
+# Copy this to .github/workflows/deploy.yml in your WP site repo
+# Change SITE_USER and SITE_DOMAIN to match your site
+
+name: Deploy to Construkt
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'ROADMAP.md'
+
+jobs:
+  deploy:
+    uses: KatamaNL/.github/.github/workflows/wp-deploy.yml@main
+    with:
+      server_user: 'SITE_USER'    # e.g. ciab, cocobe, katama
+      domain: 'SITE_DOMAIN'       # e.g. cheeseinabox.nl
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
