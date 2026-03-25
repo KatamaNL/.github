@@ -1,0 +1,97 @@
+name: WordPress CI
+
+on:
+  workflow_call:
+    inputs:
+      php_version:
+        description: 'PHP version'
+        required: false
+        type: string
+        default: '8.4'
+      custom_code_paths:
+        description: 'Paths to custom code for PHPCS (space-separated, e.g. "wp-content/mu-plugins wp-content/themes/child-theme")'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+
+      - name: PHP syntax check
+        run: |
+          echo "Checking PHP syntax..."
+          ERRORS=0
+          while IFS= read -r file; do
+            if ! php -l "$file" > /dev/null 2>&1; then
+              php -l "$file"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < <(find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*')
+          echo "Checked $(find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' | wc -l) files"
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::$ERRORS PHP syntax errors found"
+            exit 1
+          fi
+          echo "No syntax errors found"
+
+  secrets-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for leaked secrets
+        run: |
+          FOUND=0
+          # wp-config.php met echte credentials (niet het template)
+          if git ls-files | grep -q 'wp-config\.php$'; then
+            if grep -l "DB_PASSWORD.*['\"].\{8,\}['\"]" wp-config.php 2>/dev/null | grep -v 'database_name_here'; then
+              echo "::error::wp-config.php met credentials gevonden"
+              FOUND=1
+            fi
+          fi
+          # .env bestanden
+          if git ls-files | grep -qE '\.env$|\.env\.(local|prod|production)$'; then
+            echo "::error::.env bestand in git gevonden"
+            FOUND=1
+          fi
+          # Private keys
+          if git ls-files -z | xargs -0 grep -l "PRIVATE KEY" 2>/dev/null; then
+            echo "::error::Private key in git gevonden"
+            FOUND=1
+          fi
+          if [ $FOUND -gt 0 ]; then exit 1; fi
+          echo "No secrets found"
+
+  phpcs:
+    if: ${{ inputs.custom_code_paths != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: cs2pr, phpcs
+
+      - name: Install WordPress coding standards
+        run: |
+          composer global require --dev wp-coding-standards/wpcs dealerdirect/phpcodesniffer-composer-installer
+          phpcs --config-set installed_paths $(composer global config home)/vendor/wp-coding-standards/wpcs
+
+      - name: Run PHPCS
+        run: |
+          phpcs --standard=WordPress-Core \
+            --extensions=php \
+            --ignore=vendor,node_modules \
+            --report=checkstyle \
+            ${{ inputs.custom_code_paths }} | cs2pr || true

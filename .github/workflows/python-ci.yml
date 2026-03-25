@@ -1,0 +1,102 @@
+name: Python CI
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        description: 'Python version'
+        required: false
+        type: string
+        default: '3.12'
+      package_manager:
+        description: 'Package manager: pip, uv'
+        required: false
+        type: string
+        default: 'pip'
+      src_dir:
+        description: 'Source directory for linting (e.g. src, app)'
+        required: false
+        type: string
+        default: '.'
+      run_tests:
+        description: 'Run pytest'
+        required: false
+        type: boolean
+        default: true
+      run_typecheck:
+        description: 'Run mypy type checking'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check ${{ inputs.src_dir }}
+
+      - name: Ruff format check
+        run: ruff format --check ${{ inputs.src_dir }}
+
+  test:
+    if: ${{ inputs.run_tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies (pip)
+        if: ${{ inputs.package_manager == 'pip' }}
+        run: |
+          pip install -r requirements.txt 2>/dev/null || true
+          pip install -e ".[dev]" 2>/dev/null || true
+          pip install pytest pytest-cov
+
+      - name: Install dependencies (uv)
+        if: ${{ inputs.package_manager == 'uv' }}
+        run: |
+          pip install uv
+          uv sync --dev
+
+      - name: Run tests (pip)
+        if: ${{ inputs.package_manager == 'pip' }}
+        run: pytest --tb=short -q
+
+      - name: Run tests (uv)
+        if: ${{ inputs.package_manager == 'uv' }}
+        run: uv run pytest --tb=short -q
+
+  typecheck:
+    if: ${{ inputs.run_typecheck }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt 2>/dev/null || true
+          pip install -e ".[dev]" 2>/dev/null || true
+          pip install mypy
+
+      - name: Run mypy
+        run: mypy ${{ inputs.src_dir }} --ignore-missing-imports
