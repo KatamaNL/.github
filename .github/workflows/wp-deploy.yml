@@ -57,7 +57,7 @@ jobs:
         run: |
           DEPLOY_PATH="/home/${{ inputs.server_user }}/domains/${{ inputs.domain }}/public_html/${{ inputs.subdirectory }}"
           echo "Deploying to: $DEPLOY_PATH"
-          rsync -rlvz --checksum \
+          rsync -rlvz --checksum --delay-updates \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.claude' \
