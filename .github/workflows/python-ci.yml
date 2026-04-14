@@ -28,6 +28,16 @@ on:
         required: false
         type: boolean
         default: false
+      run_audit:
+        description: 'Run pip-audit for known vulnerabilities'
+        required: false
+        type: boolean
+        default: false
+      coverage_min:
+        description: 'Minimum coverage percentage (0 disables coverage gate)'
+        required: false
+        type: number
+        default: 0
 
 jobs:
   lint:
@@ -74,12 +84,37 @@ jobs:
           uv sync --dev
 
       - name: Run tests (pip)
-        if: ${{ inputs.package_manager == 'pip' }}
+        if: ${{ inputs.package_manager == 'pip' && inputs.coverage_min == 0 }}
         run: pytest --tb=short -q
 
+      - name: Run tests with coverage (pip)
+        if: ${{ inputs.package_manager == 'pip' && inputs.coverage_min != 0 }}
+        run: pytest --tb=short -q --cov=${{ inputs.src_dir }} --cov-report=term-missing --cov-fail-under=${{ inputs.coverage_min }}
+
       - name: Run tests (uv)
-        if: ${{ inputs.package_manager == 'uv' }}
+        if: ${{ inputs.package_manager == 'uv' && inputs.coverage_min == 0 }}
         run: uv run pytest --tb=short -q
+
+      - name: Run tests with coverage (uv)
+        if: ${{ inputs.package_manager == 'uv' && inputs.coverage_min != 0 }}
+        run: uv run pytest --tb=short -q --cov=${{ inputs.src_dir }} --cov-report=term-missing --cov-fail-under=${{ inputs.coverage_min }}
+
+  audit:
+    if: ${{ inputs.run_audit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit --desc
 
   typecheck:
     if: ${{ inputs.run_typecheck }}
