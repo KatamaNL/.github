@@ -77,12 +77,12 @@ jobs:
         if: ${{ inputs.mirror_mu_plugins }}
         run: |
           DEPLOY_PATH="/home/${{ inputs.server_user }}/domains/${{ inputs.domain }}/public_html/${{ inputs.subdirectory }}"
-          if [ -d "./wp-content/mu-plugins" ] && [ "$(ls -A ./wp-content/mu-plugins 2>/dev/null)" ]; then
-            echo "Mirroring mu-plugins (with --delete) to: $DEPLOY_PATH/wp-content/mu-plugins/"
-            rsync -rlvz --checksum --delay-updates --delete \
+          if [ -d "./wp-content/mu-plugins" ] && find ./wp-content/mu-plugins -maxdepth 1 -name '*.php' | grep -q .; then
+            echo "Mirroring mu-plugins (with --delete-after) to: $DEPLOY_PATH/wp-content/mu-plugins/"
+            rsync -rlvz --checksum --delay-updates --delete-after \
               ./wp-content/mu-plugins/ "construkt:$DEPLOY_PATH/wp-content/mu-plugins/"
           else
-            echo "Skipping mu-plugins mirror: directory missing or empty."
+            echo "Skipping mu-plugins mirror: directory missing or contains no PHP files."
           fi
 
       - name: Verify deployment
