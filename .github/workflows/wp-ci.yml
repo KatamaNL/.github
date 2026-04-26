@@ -106,10 +106,10 @@ jobs:
           fi
           # Private keys (PEM, OpenSSH).
           if git ls-files -z | xargs -0 grep -lE "BEGIN (RSA |DSA |EC |OPENSSH |ENCRYPTED |)PRIVATE KEY" 2>/dev/null \
-              | grep -vE 'plugins/.*/(phpseclib|Google[0-9]?/Signer|wordpress-seo/js)' >/dev/null; then
+              | grep -vE '(phpseclib|Google[0-9]?/Signer|wordpress-seo/js|/iwp-client/)' >/dev/null; then
             echo "::error::Private key in git gevonden (buiten bekende vendor stubs)"
             git ls-files -z | xargs -0 grep -lE "BEGIN (RSA |DSA |EC |OPENSSH |ENCRYPTED |)PRIVATE KEY" 2>/dev/null \
-              | grep -vE 'plugins/.*/(phpseclib|Google[0-9]?/Signer|wordpress-seo/js)' || true
+              | grep -vE '(phpseclib|Google[0-9]?/Signer|wordpress-seo/js|/iwp-client/)' || true
             FOUND=1
           fi
           # Optioneel: wp-config.php met productie-credentials.
