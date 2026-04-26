@@ -71,6 +71,7 @@ jobs:
             --exclude='ROADMAP.md' \
             --exclude='imagify-backup' \
             --exclude='wp-content/.kcc-rollback' \
+            --exclude='wp-content/.wpcc-rollback' \
             ./ "construkt:$DEPLOY_PATH"
 
       - name: Sync mu-plugins (mirror with --delete)
