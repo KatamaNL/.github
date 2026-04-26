@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: ''
+      mirror_mu_plugins:
+        description: 'Mirror wp-content/mu-plugins/ with rsync --delete so files removed in git are also removed on server. Only enable if mu-plugins is fully managed in git for this repo.'
+        required: false
+        type: boolean
+        default: false
     secrets:
       DEPLOY_SSH_KEY:
         required: true
@@ -65,7 +70,20 @@ jobs:
             --exclude='README.md' \
             --exclude='ROADMAP.md' \
             --exclude='imagify-backup' \
+            --exclude='wp-content/.kcc-rollback' \
             ./ "construkt:$DEPLOY_PATH"
+
+      - name: Sync mu-plugins (mirror with --delete)
+        if: ${{ inputs.mirror_mu_plugins }}
+        run: |
+          DEPLOY_PATH="/home/${{ inputs.server_user }}/domains/${{ inputs.domain }}/public_html/${{ inputs.subdirectory }}"
+          if [ -d "./wp-content/mu-plugins" ] && [ "$(ls -A ./wp-content/mu-plugins 2>/dev/null)" ]; then
+            echo "Mirroring mu-plugins (with --delete) to: $DEPLOY_PATH/wp-content/mu-plugins/"
+            rsync -rlvz --checksum --delay-updates --delete \
+              ./wp-content/mu-plugins/ "construkt:$DEPLOY_PATH/wp-content/mu-plugins/"
+          else
+            echo "Skipping mu-plugins mirror: directory missing or empty."
+          fi
 
       - name: Verify deployment
         run: |
