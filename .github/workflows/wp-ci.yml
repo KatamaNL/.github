@@ -9,10 +9,20 @@ on:
         type: string
         default: '8.4'
       custom_code_paths:
-        description: 'Paths to custom code for PHPCS (space-separated, e.g. "wp-content/mu-plugins wp-content/themes/child-theme")'
+        description: 'Paths to custom code voor PHPCS én php-lint (space-separated). Bijv: "wp-content/mu-plugins wp-content/themes/child-theme". Default scant alleen wp-content/mu-plugins en wp-content/themes/<custom> patroon.'
         required: false
         type: string
         default: ''
+      lint_paths:
+        description: 'Override paths voor php-lint scope. Default = custom_code_paths, of bij leeg een veilige WP-default (mu-plugins + custom themes).'
+        required: false
+        type: string
+        default: ''
+      check_wp_config:
+        description: 'Faal de secrets-check als wp-config.php met productie-credentials in git staat. Default false omdat veel WP repos legacy wp-config.php meeshippen; zet aan zodra je migrated bent naar .env/wp-config-sample.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   php-lint:
@@ -25,17 +35,55 @@ jobs:
         with:
           php-version: ${{ inputs.php_version }}
 
+      - name: Resolve lint paths
+        id: paths
+        run: |
+          if [ -n "${{ inputs.lint_paths }}" ]; then
+            paths="${{ inputs.lint_paths }}"
+          elif [ -n "${{ inputs.custom_code_paths }}" ]; then
+            paths="${{ inputs.custom_code_paths }}"
+          else
+            # Veilige default: alleen custom mu-plugins + custom themes (geen third-party plugins).
+            paths=""
+            [ -d wp-content/mu-plugins ] && paths="$paths wp-content/mu-plugins"
+            for d in wp-content/themes/*; do
+              [ -d "$d" ] || continue
+              base=$(basename "$d")
+              # Skip standaard WP themes en parent themes die we niet onderhouden.
+              case "$base" in
+                twentytwenty*|twentynineteen*|twentyseventeen*) continue ;;
+              esac
+              paths="$paths $d"
+            done
+            # Top-level custom php (niet WP core).
+            for f in $(ls *.php 2>/dev/null | grep -vE '^(wp-|index\.php$|xmlrpc\.php$)'); do
+              paths="$paths $f"
+            done
+          fi
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
+          echo "Lint scope: $paths"
+
       - name: PHP syntax check
         run: |
-          echo "Checking PHP syntax..."
+          paths="${{ steps.paths.outputs.paths }}"
+          if [ -z "$paths" ]; then
+            echo "Geen paths te linten — skip."
+            exit 0
+          fi
+          echo "Checking PHP syntax in: $paths"
           ERRORS=0
+          COUNT=0
           while IFS= read -r file; do
+            COUNT=$((COUNT + 1))
             if ! php -l "$file" > /dev/null 2>&1; then
               php -l "$file"
               ERRORS=$((ERRORS + 1))
             fi
-          done < <(find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*')
-          echo "Checked $(find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' | wc -l) files"
+          done < <(find $paths -type f -name '*.php' \
+            -not -path '*/vendor/*' \
+            -not -path '*/node_modules/*' \
+            2>/dev/null)
+          echo "Checked $COUNT files"
           if [ $ERRORS -gt 0 ]; then
             echo "::error::$ERRORS PHP syntax errors found"
             exit 1
@@ -51,22 +99,28 @@ jobs:
       - name: Check for leaked secrets
         run: |
           FOUND=0
-          # wp-config.php met echte credentials (niet het template)
-          if git ls-files | grep -q 'wp-config\.php$'; then
-            if grep -l "DB_PASSWORD.*['\"].\{8,\}['\"]" wp-config.php 2>/dev/null | grep -v 'database_name_here'; then
-              echo "::error::wp-config.php met credentials gevonden"
-              FOUND=1
-            fi
-          fi
-          # .env bestanden
+          # .env bestanden — altijd geblokkeerd.
           if git ls-files | grep -qE '\.env$|\.env\.(local|prod|production)$'; then
             echo "::error::.env bestand in git gevonden"
             FOUND=1
           fi
-          # Private keys
-          if git ls-files -z | xargs -0 grep -l "PRIVATE KEY" 2>/dev/null; then
-            echo "::error::Private key in git gevonden"
+          # Private keys (PEM, OpenSSH).
+          if git ls-files -z | xargs -0 grep -lE "BEGIN (RSA |DSA |EC |OPENSSH |ENCRYPTED |)PRIVATE KEY" 2>/dev/null \
+              | grep -vE 'plugins/.*/(phpseclib|Google[0-9]?/Signer|wordpress-seo/js)' >/dev/null; then
+            echo "::error::Private key in git gevonden (buiten bekende vendor stubs)"
+            git ls-files -z | xargs -0 grep -lE "BEGIN (RSA |DSA |EC |OPENSSH |ENCRYPTED |)PRIVATE KEY" 2>/dev/null \
+              | grep -vE 'plugins/.*/(phpseclib|Google[0-9]?/Signer|wordpress-seo/js)' || true
             FOUND=1
+          fi
+          # Optioneel: wp-config.php met productie-credentials.
+          if [ "${{ inputs.check_wp_config }}" = "true" ]; then
+            if git ls-files | grep -q '^wp-config\.php$'; then
+              if grep -E "DB_PASSWORD.*['\"].{8,}['\"]" wp-config.php 2>/dev/null \
+                  | grep -v 'database_name_here' >/dev/null; then
+                echo "::error::wp-config.php met productie-credentials in git (zie check_wp_config input)"
+                FOUND=1
+              fi
+            fi
           fi
           if [ $FOUND -gt 0 ]; then exit 1; fi
           echo "No secrets found"
